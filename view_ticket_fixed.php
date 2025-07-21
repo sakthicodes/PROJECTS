@@ -262,16 +262,64 @@
    /* Custom styles for ticket view */
    .app-email {
       min-height: calc(100vh - 200px);
+      height: calc(100vh - 200px);
+      overflow: hidden;
    }
    
    .app-email-sidebar {
       width: 230px;
       min-width: 230px;
+      height: calc(100vh - 200px);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
    }
    
    .app-email-view {
       width: 300px;
       min-width: 300px;
+      height: calc(100vh - 200px);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+   }
+   
+   .app-emails-list {
+      height: calc(100vh - 200px);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+   }
+   
+   /* Left Sidebar - Ticket Details Section */
+   .email-filters {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      scrollbar-width: thin;
+      scrollbar-color: #cbd5e1 transparent;
+   }
+   
+   .email-filters::-webkit-scrollbar {
+      width: 4px;
+   }
+   
+   .email-filters::-webkit-scrollbar-track {
+      background: transparent;
+   }
+   
+   .email-filters::-webkit-scrollbar-thumb {
+      background-color: #cbd5e1;
+      border-radius: 2px;
+   }
+   
+   .email-filters::-webkit-scrollbar-thumb:hover {
+      background-color: #94a3b8;
+   }
+   
+   /* Only show scrollbar on hover */
+   .email-filters:not(:hover)::-webkit-scrollbar-thumb {
+      background-color: transparent;
    }
    
    .ticket-info-sidebar {
@@ -287,8 +335,80 @@
       border-bottom: none;
    }
    
+   /* Center Section - Email Conversation */
+   .app-email-view-content {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      scrollbar-width: thin;
+      scrollbar-color: #cbd5e1 transparent;
+   }
+   
+   .app-email-view-content::-webkit-scrollbar {
+      width: 6px;
+   }
+   
+   .app-email-view-content::-webkit-scrollbar-track {
+      background: transparent;
+   }
+   
+   .app-email-view-content::-webkit-scrollbar-thumb {
+      background-color: #cbd5e1;
+      border-radius: 3px;
+   }
+   
+   .app-email-view-content::-webkit-scrollbar-thumb:hover {
+      background-color: #94a3b8;
+   }
+   
+   /* Only show scrollbar on hover */
+   .app-email-view-content:not(:hover)::-webkit-scrollbar-thumb {
+      background-color: transparent;
+   }
+   
+   /* Right Sidebar - Requester Information Section */
    .sender-info-content {
       font-size: 0.95rem;
+      max-height: calc(100vh - 300px);
+      overflow-y: auto;
+      overflow-x: hidden;
+      scrollbar-width: thin;
+      scrollbar-color: #cbd5e1 transparent;
+   }
+   
+   .sender-info-content::-webkit-scrollbar {
+      width: 4px;
+   }
+   
+   .sender-info-content::-webkit-scrollbar-track {
+      background: transparent;
+   }
+   
+   .sender-info-content::-webkit-scrollbar-thumb {
+      background-color: #cbd5e1;
+      border-radius: 2px;
+   }
+   
+   .sender-info-content::-webkit-scrollbar-thumb:hover {
+      background-color: #94a3b8;
+   }
+   
+   /* Only show scrollbar on hover */
+   .sender-info-content:not(:hover)::-webkit-scrollbar-thumb {
+      background-color: transparent;
+   }
+   
+   /* Ensure fixed header sections don't scroll */
+   .btn-compost-wrapper {
+      flex-shrink: 0;
+   }
+   
+   .emails-list-header {
+      flex-shrink: 0;
+   }
+   
+   .app-email-view-header {
+      flex-shrink: 0;
    }
    
    .interaction-history-list {
@@ -325,7 +445,7 @@
       margin: 0 auto;
       padding: 20px;
       height: 100%;
-      overflow-y: auto;
+      /* Remove overflow from chat container since parent handles it */
    }
    
    .message-bubble {
@@ -394,19 +514,42 @@
       color: #ffc107 !important;
    }
    
+   /* Disable scrolling for sections with no content */
+   .no-scroll {
+      overflow: hidden !important;
+   }
+   
+   /* Smooth scrolling */
+   .email-filters,
+   .app-email-view-content,
+   .sender-info-content {
+      scroll-behavior: smooth;
+   }
+   
    @media (max-width: 991px) {
       .app-email-sidebar {
          width: 100%;
          min-width: auto;
+         height: auto;
       }
       
       .app-email-view {
          width: 100%;
          min-width: auto;
+         height: auto;
+      }
+      
+      .app-emails-list {
+         height: auto;
       }
       
       .message-bubble {
          max-width: 85%;
+      }
+      
+      .app-email {
+         height: auto;
+         min-height: calc(100vh - 200px);
       }
    }
    </style>
@@ -653,8 +796,11 @@
                   isPopulatingAssignee = false;
                }
                
-               // Now load the email/mail content for this ticket
-               loadTicketMails(ticketId);
+                               // Now load the email/mail content for this ticket
+                loadTicketMails(ticketId);
+                
+                // Check scrollable content after ticket details are loaded
+                setTimeout(checkScrollableContent, 100);
                
             } else {
                Swal.fire({
@@ -773,8 +919,11 @@
          `;
       }
       
-      // Update the email view content
-      $('#app-email-view .app-email-view-content').html(mailsHtml);
+             // Update the email view content
+       $('#app-email-view .app-email-view-content').html(mailsHtml);
+       
+       // Check scrollable content after emails are loaded
+       setTimeout(checkScrollableContent, 200);
    }
 
    // FIXED: Parse conversation function for your specific format
@@ -1272,45 +1421,137 @@
       return avatarColors[Math.abs(hash) % avatarColors.length];
    }
 
-   // FIXED: Dynamic admin email detection using session variables
-   function isAdminEmail(email) {
-     if (!email) return false;
-     const emailLower = email.toLowerCase();
-     
-     console.log('Checking if admin email:', emailLower);
-     console.log('Session email:', sessionEmail);
-     console.log('User email:', userEmail);
-     
-     // Primary check: sessionEmail from PHP session
-     if (sessionEmail && emailLower.includes(sessionEmail.toLowerCase())) {
-       console.log('Matched session email - is admin');
-       return true;
-     }
-     
-     // Secondary: userEmail loaded from database
-     if (userEmail && emailLower.includes(userEmail.toLowerCase())) {
-       console.log('Matched user email - is admin');
-       return true;
-     }
-     
-     // Additional admin email patterns (customize as needed)
-     const adminPatterns = [
-       'admin@',
-       'support@',
-       'help@',
-       'noreply@'
-     ];
-     
-     for (const pattern of adminPatterns) {
-       if (emailLower.includes(pattern)) {
-         console.log('Matched admin pattern:', pattern, '- is admin');
-         return true;
-       }
-     }
-     
-     console.log('Not admin email');
-     return false;
-   }
+       // FIXED: Dynamic admin email detection using session variables
+    function isAdminEmail(email) {
+      if (!email) return false;
+      const emailLower = email.toLowerCase();
+      
+      console.log('Checking if admin email:', emailLower);
+      console.log('Session email:', sessionEmail);
+      console.log('User email:', userEmail);
+      
+      // Primary check: sessionEmail from PHP session
+      if (sessionEmail && emailLower.includes(sessionEmail.toLowerCase())) {
+        console.log('Matched session email - is admin');
+        return true;
+      }
+      
+      // Secondary: userEmail loaded from database
+      if (userEmail && emailLower.includes(userEmail.toLowerCase())) {
+        console.log('Matched user email - is admin');
+        return true;
+      }
+      
+      // Additional admin email patterns (customize as needed)
+      const adminPatterns = [
+        'admin@',
+        'support@',
+        'help@',
+        'noreply@'
+      ];
+      
+      for (const pattern of adminPatterns) {
+        if (emailLower.includes(pattern)) {
+          console.log('Matched admin pattern:', pattern, '- is admin');
+          return true;
+        }
+      }
+      
+      console.log('Not admin email');
+      return false;
+    }
+
+    // Function to check and control scrolling based on content
+    function checkScrollableContent() {
+      // Check left sidebar (ticket details)
+      const ticketDetails = document.querySelector('.email-filters');
+      const ticketDetailsContent = document.querySelector('.ticket-info-sidebar');
+      if (ticketDetails && ticketDetailsContent) {
+        if (ticketDetailsContent.scrollHeight <= ticketDetails.clientHeight) {
+          ticketDetails.classList.add('no-scroll');
+        } else {
+          ticketDetails.classList.remove('no-scroll');
+        }
+      }
+
+      // Check center section (email conversation)
+      const emailContent = document.querySelector('.app-email-view-content');
+      const chatContainer = document.querySelector('.chat-container');
+      if (emailContent && chatContainer) {
+        if (chatContainer.scrollHeight <= emailContent.clientHeight) {
+          emailContent.classList.add('no-scroll');
+        } else {
+          emailContent.classList.remove('no-scroll');
+        }
+      }
+
+      // Check right sidebar (requester information)
+      const requesterInfo = document.querySelector('.sender-info-content');
+      if (requesterInfo) {
+        if (requesterInfo.scrollHeight <= requesterInfo.clientHeight) {
+          requesterInfo.classList.add('no-scroll');
+        } else {
+          requesterInfo.classList.remove('no-scroll');
+        }
+      }
+    }
+
+    // Function to add hover-based scroll control
+    function initializeHoverScrolling() {
+      const scrollableSections = [
+        '.email-filters',
+        '.app-email-view-content', 
+        '.sender-info-content'
+      ];
+
+      scrollableSections.forEach(selector => {
+        const element = document.querySelector(selector);
+        if (element) {
+          // Add mouse enter/leave events for visual feedback
+          element.addEventListener('mouseenter', function() {
+            this.style.scrollbarColor = '#94a3b8 transparent';
+          });
+
+          element.addEventListener('mouseleave', function() {
+            this.style.scrollbarColor = '#cbd5e1 transparent';
+          });
+
+          // Prevent wheel event from bubbling to parent when hovering
+          element.addEventListener('wheel', function(e) {
+            const isScrollable = this.scrollHeight > this.clientHeight;
+            
+            if (!isScrollable) {
+              e.preventDefault();
+              return;
+            }
+
+            const isAtTop = this.scrollTop === 0;
+            const isAtBottom = this.scrollTop + this.clientHeight >= this.scrollHeight;
+            
+            // Prevent scrolling parent when at boundaries
+            if ((e.deltaY < 0 && isAtTop) || (e.deltaY > 0 && isAtBottom)) {
+              // Allow normal scrolling within bounds
+              return;
+            }
+            
+            // Stop propagation to prevent other sections from scrolling
+            e.stopPropagation();
+          }, { passive: false });
+        }
+      });
+    }
+
+    // Initialize scroll controls after DOM is ready
+    $(document).ready(function() {
+      // Initialize hover scrolling immediately
+      initializeHoverScrolling();
+      
+      // Check scrollable content after a short delay to ensure content is loaded
+      setTimeout(checkScrollableContent, 100);
+      
+      // Recheck when window is resized
+      $(window).on('resize', checkScrollableContent);
+    });
    </script>
 </body>
 </html>
