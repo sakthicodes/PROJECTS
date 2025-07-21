@@ -235,19 +235,15 @@ class EmailProcessor {
     }
     
     private function storeEmail($email_account_id, $message_id, $from_email, $from_name, $to_email, $to_name, $subject, $body, $received_date, $direction) {
-        // Extract and clean the email content
-        $clean_content = $this->extractEmailContent($body);
+        // Clean the email content (remove quoted parts, HTML, etc.)
+        $clean_content = $this->cleanEmailContent($body);
         
-        // Format the email header consistently
+        // Format date as requested: YYYY-MM-DD HH:MM:SS
         $email_timestamp = strtotime($received_date);
-        $formatted_date = date('D, d M Y \a\t H:i:s', $email_timestamp);
+        $formatted_date = date('Y-m-d H:i:s', $email_timestamp);
         
-        // Ensure consistent name/email formatting
-        $sender_display = $this->formatSenderDisplay($from_name, $from_email);
-        $recipient_display = $this->formatSenderDisplay($to_name, $to_email);
-        
-        // Create the formatted conversation entry
-        $formatted_body = "On {$formatted_date} from {$sender_display} to {$recipient_display}: {$clean_content}";
+        // Create the simple formatted entry: datetime from_email - to_email content
+        $formatted_entry = "{$formatted_date} {$from_email} - {$to_email} {$clean_content}";
 
         $ticket_id = $this->findTicketForEmail($subject, $from_email, $to_email);
 
@@ -262,8 +258,8 @@ class EmailProcessor {
             if ($existing_result->num_rows > 0) {
                 $existing_mail = $existing_result->fetch_assoc();
                 
-                // Parse existing conversation and add new message at the top
-                $updated_conversation = $this->addToConversation($existing_mail['body_text'], $formatted_body);
+                // Parse existing conversation and add new message in chronological order
+                $updated_conversation = $this->addToConversationChronologically($existing_mail['body_text'], $formatted_entry, $email_timestamp);
 
                 // Update the existing mail record with the combined conversation
                 $update_sql = "UPDATE mails SET body_text = ?, message_id = ?, from_name = ?, from_email = ?, to_name = ?, to_email = ?, updated_at = NOW() WHERE id = ?";
@@ -281,54 +277,23 @@ class EmailProcessor {
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         
         $stmt = $this->conn->prepare($sql);
-        $stmt->bind_param('iisssssssss', $email_account_id, $ticket_id, $message_id, $from_email, $from_name, $to_email, $to_name, $subject, $formatted_body, $direction, $received_date);
+        $stmt->bind_param('iisssssssss', $email_account_id, $ticket_id, $message_id, $from_email, $from_name, $to_email, $to_name, $subject, $formatted_entry, $direction, $received_date);
         $stmt->execute();
         
         echo "      Stored new {$direction} email in database: {$subject}\n";
     }
     
     /**
-     * Format sender display consistently - prefer name if available, fallback to email
+     * Clean email content - remove quoted parts, HTML, signatures
      */
-    private function formatSenderDisplay($name, $email) {
-        // Clean up the name if it exists
-        if (!empty($name) && trim($name) !== '') {
-            $clean_name = trim($name);
-            // Remove quotes if they wrap the entire name
-            $clean_name = preg_replace('/^"(.*)"$/', '$1', $clean_name);
-            return "{$clean_name} <{$email}>";
-        }
+    private function cleanEmailContent($raw_body) {
+        // Remove HTML tags first
+        $content = strip_tags($raw_body);
         
-        // If no name available, just use email
-        return $email;
-    }
-    
-    /**
-     * Extract clean email content from raw email body
-     */
-    private function extractEmailContent($raw_body) {
-        // First try to extract from MIME format
-        $content = $this->extractFromMimeMessage($raw_body);
+        // Decode HTML entities
+        $content = html_entity_decode($content, ENT_QUOTES | ENT_HTML5, 'UTF-8');
         
-        if (empty($content)) {
-            // Fallback to cleaning HTML and extracting text
-            $content = $this->cleanHtmlTags($raw_body);
-        }
-        
-        // Extract only the new message part (before quoted content)
-        $content = $this->extractNewMessageContent($content);
-        
-        // Final cleanup
-        $content = $this->finalContentCleanup($content);
-        
-        return $content;
-    }
-    
-    /**
-     * Extract new message content, removing quoted/forwarded parts
-     */
-    private function extractNewMessageContent($content) {
-        // Common patterns that indicate start of quoted content
+        // Remove quoted content patterns
         $quote_patterns = [
             '/On .* wrote:/i',
             '/On .* from .* to .* :/i',
@@ -336,7 +301,7 @@ class EmailProcessor {
             '/From:.*Sent:.*To:.*Subject:/s',
             '/________________________________/i', // Outlook separator
             '/>.*>/m', // Quote markers like "> text"
-            '/--\s*\n/', // Email signatures
+            '/--\s*$/m', // Email signatures
         ];
         
         foreach ($quote_patterns as $pattern) {
@@ -347,72 +312,8 @@ class EmailProcessor {
             }
         }
         
-        return $content;
-    }
-    
-    /**
-     * Add new message to existing conversation at the top
-     */
-    private function addToConversation($existing_conversation, $new_message) {
-        // Parse existing conversation to maintain proper order
-        echo "      Adding new message to existing conversation\n";
-        
-        // The new message should be added at the top of the conversation
-        return $new_message . "\n\n" . $existing_conversation;
-    }
-    
-    /**
-     * Extract content from MIME message format
-     */
-    private function extractFromMimeMessage($mime_content) {
-        // Look for text/plain content first
-        if (preg_match('/Content-Type: text\/plain.*?\n\n(.*?)(?=--[a-f0-9]|Content-Type:|$)/s', $mime_content, $matches)) {
-            $text_content = $matches[1];
-            
-            // Decode quoted-printable if present
-            if (strpos($mime_content, 'quoted-printable') !== false) {
-                $text_content = quoted_printable_decode($text_content);
-            }
-            
-            // Decode base64 if present
-            if (strpos($mime_content, 'base64') !== false) {
-                $text_content = base64_decode($text_content);
-            }
-            
-            return trim($text_content);
-        }
-        
-        return '';
-    }
-    
-    /**
-     * Clean HTML tags and convert to plain text
-     */
-    private function cleanHtmlTags($html_content) {
-        // Decode HTML entities first
-        $text = html_entity_decode($html_content, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-        
-        // Convert <br>, <p>, <div> to line breaks before removing tags
-        $text = preg_replace('/<br\s*\/?>/i', "\n", $text);
-        $text = preg_replace('/<\/p>/i', "\n\n", $text);
-        $text = preg_replace('/<\/div>/i', "\n", $text);
-        $text = preg_replace('/<p[^>]*>/i', '', $text);
-        $text = preg_replace('/<div[^>]*>/i', '', $text);
-        
-        // Remove all other HTML tags
-        $text = strip_tags($text);
-        
-        return $text;
-    }
-    
-    /**
-     * Final cleanup of extracted content
-     */
-    private function finalContentCleanup($content) {
-        // Remove MIME boundary markers
+        // Remove MIME boundary markers and headers
         $content = preg_replace('/--[a-f0-9]{10,}.*$/m', '', $content);
-        
-        // Remove Content-Type headers
         $content = preg_replace('/Content-Type:.*$/m', '', $content);
         $content = preg_replace('/Content-Transfer-Encoding:.*$/m', '', $content);
         $content = preg_replace('/Content-Disposition:.*$/m', '', $content);
@@ -423,6 +324,56 @@ class EmailProcessor {
         $content = preg_replace('/\n{3,}/', "\n\n", $content);
         
         return trim($content);
+    }
+    
+    /**
+     * Add new message to conversation in chronological order (oldest first)
+     */
+    private function addToConversationChronologically($existing_conversation, $new_entry, $new_timestamp) {
+        // Split existing conversation into individual entries
+        $entries = [];
+        
+        // Parse existing entries (format: YYYY-MM-DD HH:MM:SS email - email content)
+        $lines = explode("\n", $existing_conversation);
+        $current_entry = '';
+        
+        foreach ($lines as $line) {
+            // Check if line starts with a timestamp (new entry)
+            if (preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/', $line)) {
+                if (!empty($current_entry)) {
+                    // Extract timestamp from previous entry for sorting
+                    preg_match('/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/', $current_entry, $matches);
+                    $timestamp = strtotime($matches[1]);
+                    $entries[] = ['timestamp' => $timestamp, 'content' => trim($current_entry)];
+                }
+                $current_entry = $line;
+            } else {
+                $current_entry .= "\n" . $line;
+            }
+        }
+        
+        // Add the last entry
+        if (!empty($current_entry)) {
+            preg_match('/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/', $current_entry, $matches);
+            $timestamp = strtotime($matches[1]);
+            $entries[] = ['timestamp' => $timestamp, 'content' => trim($current_entry)];
+        }
+        
+        // Add new entry
+        $entries[] = ['timestamp' => $new_timestamp, 'content' => $new_entry];
+        
+        // Sort by timestamp (chronological order - oldest first)
+        usort($entries, function($a, $b) {
+            return $a['timestamp'] - $b['timestamp'];
+        });
+        
+        // Rebuild conversation
+        $conversation_parts = [];
+        foreach ($entries as $entry) {
+            $conversation_parts[] = $entry['content'];
+        }
+        
+        return implode("\n\n", $conversation_parts);
     }
     
     private function findTicketForEmail($subject, $from_email, $to_email) {
@@ -501,7 +452,7 @@ class EmailProcessor {
     }
     
     private function addCommentToTicket($ticket_id, $from_email, $from_name, $body, $message_id) {
-        $clean_body = $this->extractEmailContent($body);
+        $clean_body = $this->cleanEmailContent($body);
         
         $sql = "INSERT INTO ticket_comments (ticket_id, comment_text, is_from_email, email_message_id, from_email, from_name, created_at) 
                 VALUES (?, ?, 1, ?, ?, ?, NOW())";
@@ -531,7 +482,7 @@ class EmailProcessor {
         }
 
         // Clean the body content for ticket description
-        $clean_description = $this->extractEmailContent($body);
+        $clean_description = $this->cleanEmailContent($body);
 
         // Prepare all required fields for ticket table
         $requester = $customer_name;
