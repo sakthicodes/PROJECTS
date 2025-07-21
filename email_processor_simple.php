@@ -284,24 +284,45 @@ class EmailProcessor {
     }
     
     /**
-     * Clean email content - remove quoted parts, HTML, signatures
+     * Clean email content - remove quoted parts, HTML, signatures, MIME encoding
      */
     private function cleanEmailContent($raw_body) {
-        // Remove HTML tags first
-        $content = strip_tags($raw_body);
+        // First decode quoted-printable encoding (=XX format)
+        $content = quoted_printable_decode($raw_body);
+        
+        // Decode base64 if present
+        if (strpos($content, 'Content-Transfer-Encoding: base64') !== false) {
+            // Extract base64 content between boundaries
+            if (preg_match('/Content-Transfer-Encoding: base64.*?\n\n(.*?)(?=--|\z)/s', $content, $matches)) {
+                $base64_content = str_replace(["\n", "\r"], '', $matches[1]);
+                $decoded = base64_decode($base64_content);
+                if ($decoded !== false) {
+                    $content = $decoded;
+                }
+            }
+        }
+        
+        // Remove HTML tags
+        $content = strip_tags($content);
         
         // Decode HTML entities
         $content = html_entity_decode($content, ENT_QUOTES | ENT_HTML5, 'UTF-8');
         
-        // Remove quoted content patterns
+        // Remove MIME headers and boundaries first
+        $content = preg_replace('/Content-Type:.*$/m', '', $content);
+        $content = preg_replace('/Content-Transfer-Encoding:.*$/m', '', $content);
+        $content = preg_replace('/Content-Disposition:.*$/m', '', $content);
+        $content = preg_replace('/--[a-f0-9]{8,}.*$/m', '', $content);
+        
+        // Split by common quoted content patterns and take only the first part (new message)
         $quote_patterns = [
-            '/On .* wrote:/i',
-            '/On .* from .* to .* :/i',
+            '/On\s+.*?wrote:\s*/is',  // "On ... wrote:"
+            '/On\s+.*?from\s+.*?to\s+.*?:\s*/is',  // "On ... from ... to ...:"
             '/-----Original Message-----/i',
-            '/From:.*Sent:.*To:.*Subject:/s',
-            '/________________________________/i', // Outlook separator
-            '/>.*>/m', // Quote markers like "> text"
-            '/--\s*$/m', // Email signatures
+            '/From:.*?Sent:.*?To:.*?Subject:/s',
+            '/________________________________/i',
+            '/\n\s*>\s*.*$/s',  // Lines starting with >
+            '/--\s*\n/s',  // Email signatures
         ];
         
         foreach ($quote_patterns as $pattern) {
@@ -312,16 +333,24 @@ class EmailProcessor {
             }
         }
         
-        // Remove MIME boundary markers and headers
-        $content = preg_replace('/--[a-f0-9]{10,}.*$/m', '', $content);
-        $content = preg_replace('/Content-Type:.*$/m', '', $content);
-        $content = preg_replace('/Content-Transfer-Encoding:.*$/m', '', $content);
-        $content = preg_replace('/Content-Disposition:.*$/m', '', $content);
+        // Remove any remaining quoted lines (starting with >)
+        $lines = explode("\n", $content);
+        $clean_lines = [];
+        foreach ($lines as $line) {
+            $trimmed = trim($line);
+            if (!empty($trimmed) && !preg_match('/^\s*>/', $line)) {
+                $clean_lines[] = $trimmed;
+            }
+        }
+        $content = implode(' ', $clean_lines);
         
-        // Clean up excessive whitespace
-        $content = preg_replace('/[ \t]+/', ' ', $content);
-        $content = preg_replace('/\n[ \t]+/', "\n", $content);
-        $content = preg_replace('/\n{3,}/', "\n\n", $content);
+        // Clean up excessive whitespace and special characters
+        $content = preg_replace('/\s+/', ' ', $content);
+        $content = preg_replace('/[^\x20-\x7E\x0A\x0D]/', '', $content); // Remove non-printable chars
+        
+        // Remove common email artifacts
+        $content = preg_replace('/\*[^*]*\*/', '', $content); // Remove *text* formatting
+        $content = str_replace(['=20', '=3D', '=C2=A0'], [' ', '=', ' '], $content);
         
         return trim($content);
     }
