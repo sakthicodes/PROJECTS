@@ -317,10 +317,10 @@
       background-color: #94a3b8;
    }
    
-   /* Only show scrollbar on hover */
-   .email-filters:not(:hover)::-webkit-scrollbar-thumb {
-      background-color: transparent;
-   }
+       /* Always show scrollbar when content is scrollable */
+    .email-filters::-webkit-scrollbar-thumb {
+       background-color: #cbd5e1;
+    }
    
    .ticket-info-sidebar {
       padding: 0 1.5rem;
@@ -361,10 +361,10 @@
       background-color: #94a3b8;
    }
    
-   /* Only show scrollbar on hover */
-   .app-email-view-content:not(:hover)::-webkit-scrollbar-thumb {
-      background-color: transparent;
-   }
+       /* Always show scrollbar when content is scrollable */
+    .app-email-view-content::-webkit-scrollbar-thumb {
+       background-color: #cbd5e1;
+    }
    
    /* Right Sidebar - Requester Information Section */
    .sender-info-content {
@@ -393,10 +393,10 @@
       background-color: #94a3b8;
    }
    
-   /* Only show scrollbar on hover */
-   .sender-info-content:not(:hover)::-webkit-scrollbar-thumb {
-      background-color: transparent;
-   }
+       /* Always show scrollbar when content is scrollable */
+    .sender-info-content::-webkit-scrollbar-thumb {
+       background-color: #cbd5e1;
+    }
    
    /* Ensure fixed header sections don't scroll */
    .btn-compost-wrapper {
@@ -1496,62 +1496,81 @@
       }
     }
 
-    // Function to add hover-based scroll control
-    function initializeHoverScrolling() {
-      const scrollableSections = [
-        '.email-filters',
-        '.app-email-view-content', 
-        '.sender-info-content'
-      ];
+         // Function to add independent scroll control
+     function initializeIndependentScrolling() {
+       const scrollableSections = [
+         '.email-filters',
+         '.app-email-view-content', 
+         '.sender-info-content'
+       ];
 
-      scrollableSections.forEach(selector => {
-        const element = document.querySelector(selector);
-        if (element) {
-          // Add mouse enter/leave events for visual feedback
-          element.addEventListener('mouseenter', function() {
-            this.style.scrollbarColor = '#94a3b8 transparent';
-          });
+       scrollableSections.forEach(selector => {
+         const element = document.querySelector(selector);
+         if (element) {
+           // Prevent wheel event from affecting other sections
+           element.addEventListener('wheel', function(e) {
+             const isScrollable = this.scrollHeight > this.clientHeight;
+             
+             // If content doesn't need scrolling, prevent scroll entirely
+             if (!isScrollable) {
+               e.preventDefault();
+               e.stopPropagation();
+               return;
+             }
 
-          element.addEventListener('mouseleave', function() {
-            this.style.scrollbarColor = '#cbd5e1 transparent';
-          });
+             // Allow scrolling within this section only
+             // Stop propagation to prevent other sections from scrolling
+             e.stopPropagation();
+           }, { passive: false });
+         }
+       });
+     }
 
-          // Prevent wheel event from bubbling to parent when hovering
-          element.addEventListener('wheel', function(e) {
-            const isScrollable = this.scrollHeight > this.clientHeight;
-            
-            if (!isScrollable) {
-              e.preventDefault();
-              return;
-            }
+              // Initialize scroll controls after DOM is ready
+     $(document).ready(function() {
+       // Initialize independent scrolling immediately
+       initializeIndependentScrolling();
+       
+       // Check scrollable content after a short delay to ensure content is loaded
+       setTimeout(checkScrollableContent, 100);
+       
+       // Recheck when window is resized
+       $(window).on('resize', checkScrollableContent);
 
-            const isAtTop = this.scrollTop === 0;
-            const isAtBottom = this.scrollTop + this.clientHeight >= this.scrollHeight;
-            
-            // Prevent scrolling parent when at boundaries
-            if ((e.deltaY < 0 && isAtTop) || (e.deltaY > 0 && isAtBottom)) {
-              // Allow normal scrolling within bounds
-              return;
-            }
-            
-            // Stop propagation to prevent other sections from scrolling
-            e.stopPropagation();
-          }, { passive: false });
-        }
-      });
-    }
+       // Add global wheel event handler for better control
+       document.addEventListener('wheel', function(e) {
+         // Find which scrollable section the mouse is over
+         const scrollableSections = [
+           '.email-filters',
+           '.app-email-view-content', 
+           '.sender-info-content'
+         ];
 
-    // Initialize scroll controls after DOM is ready
-    $(document).ready(function() {
-      // Initialize hover scrolling immediately
-      initializeHoverScrolling();
-      
-      // Check scrollable content after a short delay to ensure content is loaded
-      setTimeout(checkScrollableContent, 100);
-      
-      // Recheck when window is resized
-      $(window).on('resize', checkScrollableContent);
-    });
+         let targetSection = null;
+         const mouseX = e.clientX;
+         const mouseY = e.clientY;
+
+         for (const selector of scrollableSections) {
+           const element = document.querySelector(selector);
+           if (element) {
+             const rect = element.getBoundingClientRect();
+             if (mouseX >= rect.left && mouseX <= rect.right && 
+                 mouseY >= rect.top && mouseY <= rect.bottom) {
+               targetSection = element;
+               break;
+             }
+           }
+         }
+
+         // If mouse is over a scrollable section, only allow that section to scroll
+         if (targetSection) {
+           const isScrollable = targetSection.scrollHeight > targetSection.clientHeight;
+           if (!isScrollable) {
+             e.preventDefault();
+           }
+         }
+       }, { passive: false });
+     });
    </script>
 </body>
 </html>
