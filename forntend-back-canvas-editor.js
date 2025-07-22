@@ -28,6 +28,28 @@ function sanitizeCanvasData(canvasData) {
     return canvasData;
 }
 
+// Function to sanitize existing canvas objects
+function sanitizeCanvasObjects() {
+    if (!canvas) return;
+    
+    canvas.getObjects().forEach(obj => {
+        if (obj.type === 'i-text' || obj.type === 'text') {
+            // Fix invalid textBaseline values on existing objects
+            if (obj.textBaseline === 'alphabetical') {
+                obj.set('textBaseline', 'alphabetic');
+                console.log('Fixed textBaseline from "alphabetical" to "alphabetic" for object:', obj);
+            }
+            // Remove any other invalid textBaseline values
+            const validBaselines = ['top', 'hanging', 'middle', 'alphabetic', 'ideographic', 'bottom'];
+            if (obj.textBaseline && !validBaselines.includes(obj.textBaseline)) {
+                obj.set('textBaseline', 'alphabetic');
+                console.log('Fixed invalid textBaseline to "alphabetic" for object:', obj);
+            }
+        }
+    });
+    canvas.renderAll();
+}
+
 var canvas = new fabric.Canvas('canvas');
 fabric.Object.prototype.transparentCorners = false;
 fabric.Object.prototype.cornerColor = '#511F1B';
@@ -192,6 +214,8 @@ async function loadGoogleFonts() {
 
 window.onload = function () {
     loadGoogleFonts();
+    // Sanitize any existing canvas objects
+    setTimeout(() => sanitizeCanvasObjects(), 500);
     canvas.renderAll();
 };
 window.loadGoogleFonts = loadGoogleFonts;
@@ -490,6 +514,10 @@ function handleObjectModified() {
 }
 canvas.on('selection:created', handleObjectSelection);
 canvas.on('selection:updated', handleObjectSelection);
+canvas.on('object:added', function() {
+    // Sanitize any newly added objects
+    setTimeout(() => sanitizeCanvasObjects(), 100);
+});
 canvas.on('selection:cleared', function () {
     document.getElementById('myTextarea').value = '';
     document.getElementById('myTextarea').setAttribute("disabled", true);
@@ -514,6 +542,10 @@ function getImageData() {
     canvas.setWidth(originalWidth * scaleFactor);
     canvas.setHeight(originalHeight * scaleFactor);
     canvas.setZoom(scaleFactor);
+    
+    // Sanitize canvas objects before getting image data
+    sanitizeCanvasObjects();
+    
     // Render the canvas in higher resolution
     const dataURL = canvas.toDataURL({
         format: 'png',
@@ -631,12 +663,14 @@ jQuery(document).ready(function ($) {
                 // Load the fonts before rendering the canvas
                 loadFonts(Array.from(fonts), () => {
                     canvas.loadFromJSON(data, () => {
+                        sanitizeCanvasObjects();
                         canvas.renderAll();
                     });
                 });
             } else {
                 // If no fonts to load, just render the canvas
                 canvas.loadFromJSON(data, () => {
+                    sanitizeCanvasObjects();
                     canvas.renderAll();
                 });
             }
@@ -662,11 +696,13 @@ jQuery(document).ready(function ($) {
                 if (fonts.size > 0) {
                     loadFonts(Array.from(fonts), () => {
                         canvas.loadFromJSON(data, () => {
+                            sanitizeCanvasObjects();
                             canvas.renderAll();
                         });
                     });
                 } else {
                     canvas.loadFromJSON(data, () => {
+                        sanitizeCanvasObjects();
                         canvas.renderAll();
                     });
                 }
@@ -854,6 +890,8 @@ function loadCanvasFromJSON(json) {
                 }
             }
         });
+        // Final sanitization after all objects are loaded
+        sanitizeCanvasObjects();
         canvas.renderAll();
     });
 }
@@ -885,6 +923,9 @@ jQuery('#save-back-canvas-db-admin').on('click', function () {
     // Sanitize canvas data before processing
     canvasData = sanitizeCanvasData(canvasData);
 
+    // Sanitize canvas objects before getting image data
+    sanitizeCanvasObjects();
+    
     // Get image data as a PNG
     var imageDataURL = canvas.toDataURL({
         format: 'png',
@@ -937,6 +978,9 @@ jQuery('#save-back-canvas-db-admin').on('click', function () {
 
         // Sanitize canvas data before processing
         canvasData = sanitizeCanvasData(canvasData);
+        
+        // Sanitize canvas objects before getting image data
+        sanitizeCanvasObjects();
 
         var imageDataURL = canvas.toDataURL({
             format: 'png',
@@ -1122,6 +1166,9 @@ jQuery(document).ready(function ($) {
 
         // Sanitize canvas data before processing
         canvasData = sanitizeCanvasData(canvasData);
+        
+        // Sanitize canvas objects before getting image data
+        sanitizeCanvasObjects();
 
         var imageDataURL = canvas.toDataURL({
             format: 'png',
@@ -1192,6 +1239,7 @@ jQuery(document).ready(function ($) {
                 // Sanitize the data before loading
                 const sanitizedData = sanitizeCanvasData(response.data.json_data);
                 canvas.loadFromJSON(sanitizedData, () => {
+                    sanitizeCanvasObjects();
                     canvas.renderAll();
                 });
             }
@@ -1221,6 +1269,7 @@ jQuery(document).ready(function ($) {
                 // Sanitize the data before loading
                 const sanitizedData = sanitizeCanvasData(response.data.json_data);
                 canvas.loadFromJSON(sanitizedData, () => {
+                    sanitizeCanvasObjects();
                     canvas.renderAll();
                 });
             }
